@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DigiLib - Platform Baca Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        .pulse-hover:hover { animation: pulse 1.5s infinite; }
+        .book-cover { 
+            transition: all 0.3s ease; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .book-cover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+        }
+        .chapter-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .chapter-container.open {
+            max-height: 1000px;
+            transition: max-height 0.5s ease-in;
+        }
+        .progress-bar {
+            height: 5px;
+            background: linear-gradient(90deg, #4f46e5, #a855f7);
+            transition: width 0.3s ease;
+        }
+        .dark-mode {
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Login Modal -->
+        <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-lg p-6 w-80 fade-in">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Masuk Sebagai Admin</h3>
+                    <button onclick="closeModal('loginModal')" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <input type="password" id="adminKey" placeholder="Masukkan Kode Admin" class="w-full p-2 border rounded mb-4">
+                <button onclick="checkAdminAccess()" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition">Masuk</button>
+                <p class="text-sm text-gray-500 mt-2">Kode admin: uswatun19999</p>
+            </div>
+        </div>
+
+        <!-- Admin Panel Modal -->
+        <div id="adminPanel" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto fade-in">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Panel Admin</h3>
+                    <button onclick="closeModal('adminPanel')" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="mb-6">
+                    <h4 class="text-lg font-semibold mb-2">Tambah Buku Baru</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" id="bookTitle" placeholder="Judul Buku" class="p-2 border rounded">
+                        <input type="text" id="bookAuthor" placeholder="Penulis" class="p-2 border rounded">
+                        <textarea id="bookSynopsis" placeholder="Sinopsis" class="p-2 border rounded col-span-1 md:col-span-2"></textarea>
+                        <input type="text" id="bookCoverUrl" placeholder="URL Cover Buku" class="p-2 border rounded" value="https://placehold.co/600x900">
+                        <input type="text" id="bookCategory" placeholder="Kategori (pisah dengan koma)" class="p-2 border rounded">
+                        <input type="number" id="bookStatus" placeholder="Status (0=Draft, 1=Terbit)" class="p-2 border rounded" min="0" max="1">
+                    </div>
+                    <button onclick="addNewBook()" class="mt-2 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition">Tambah Buku</button>
+                </div>
+
+                <div class="mb-6">
+                    <h4 class="text-lg font-semibold mb-2">Tambah Chapter</h4>
+                    <div class="flex flex-col space-y-2">
+                        <select id="chapterBookSelect" class="p-2 border rounded">
+                            <!-- Will be populated with book options -->
+                        </select>
+                        <input type="text" id="chapterTitle" placeholder="Judul Chapter" class="p-2 border rounded">
+                        <textarea id="chapterContent" placeholder="Isi Chapter" class="p-2 border rounded h-40"></textarea>
+                        <button onclick="addChapter()" class="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition">Tambah Chapter</button>
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="text-lg font-semibold mb-2">Kelola Buku</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white border">
+                            <thead>
+                                <tr>
+                                    <th class="py-2 px-4 border">Judul</th>
+                                    <th class="py-2 px-4 border">Penulis</th>
+                                    <th class="py-2 px-4 border">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bookManagementList">
+                                <!-- Will be populated with books -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Bar -->
+        <nav class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-40">
+            <div class="container mx-auto flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-book-open text-2xl"></i>
+                    <h1 class="text-2xl font-bold">DigiLib</h1>
+                </div>
+                <div class="hidden md:flex items-center space-x-6">
+                    <a href="#home" class="hover:text-blue-200 transition">Beranda</a>
+                    <a href="#browse" class="hover:text-blue-200 transition">Jelajah</a>
+                    <a href="#bookmark" class="hover:text-blue-200 transition">Bookmark</a>
+                    <div class="relative">
+                        <button onclick="toggleTheme()" class="hover:text-blue-200 transition p-1 rounded-full bg-blue-700">
+                            <i id="themeIcon" class="fas fa-moon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <input type="text" id="searchInput" placeholder="Cari buku..." class="hidden md:block py-1 px-3 rounded-full text-gray-800">
+                        <button onclick="toggleSearch()" class="md:hidden">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <button onclick="showAdminLogin()" class="bg-blue-700 hover:bg-blue-800 py-1 px-3 rounded-full text-sm transition">
+                        <i class="fas fa-user-shield mr-1"></i> Admin
+                    </button>
+                    <button class="md:hidden" onclick="toggleMobileMenu()">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            <!-- Mobile Menu -->
+            <div id="mobileMenu" class="md:hidden hidden bg-blue-700 mt-2 p-2 rounded-b-lg">
+                <div class="flex flex-col space-y-2">
+                    <a href="#home" class="hover:text-blue-200 transition p-2">Beranda</a>
+                    <a href="#browse" class="hover:text-blue-200 transition p-2">Jelajah</a>
+                    <a href="#bookmark" class="hover:text-blue-200 transition p-2">Bookmark</a>
+                    <div class="p-2">
+                        <input type="text" placeholder="Cari buku..." class="w-full py-1 px-3 rounded-full text-gray-800">
+                    </div>
+                    <button onclick="toggleTheme()" class="text-left hover:text-blue-200 transition p-2">
+                        <i id="mobileThemeIcon" class="fas fa-moon mr-2"></i> Ganti Tema
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <section id="home" class="relative h-96 flex items-center justify-center bg-gradient-to-r from-blue-600 to-purple-600 text-white overflow-hidden">
+            <div class="absolute inset-0 opacity-20">
+                <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/6cc0f3bd-c9ab-4e0e-a605-82be397608a7.png" alt="Latar belakang hero section dengan buku-buku terbuka melayang di udara dengan efek abstrak berwarna biru dan ungu" class="w-full h-full object-cover">
+            </div>
+            <div class="container mx-auto text-center relative z-10 px-4 fade-in">
+                <h2 class="text-4xl md:text-5xl font-bold mb-4">Baca Buku Digital Dimana Saja</h2>
+                <p class="text-xl mb-6">Jelajahi ribuan buku dan cerita menarik dari berbagai genre</p>
+                <div class="relative max-w-md mx-auto">
+                    <input type="text" placeholder="Cari buku favoritmu..." class="w-full py-3 px-6 rounded-full text-gray-800 shadow-lg">
+                    <button class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white p-2 rounded-full">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Categories Section -->
+        <section class="py-8 bg-gray-50">
+            <div class="container mx-auto px-4">
+                <h3 class="text-2xl font-bold mb-6">Kategori Populer</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                            <i class="fas fa-heart"></i>
+                        </div>
+                        <span>Romantis</span>
+                    </div>
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                            <i class="fas fa-fighter-jet"></i>
+                        </div>
+                        <span>Aksi</span>
+                    </div>
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                            <i class="fas fa-hat-wizard"></i>
+                        </div>
+                        <span>Fantasi</span>
+                    </div>
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600">
+                            <i class="fas fa-user-secret"></i>
+                        </div>
+                        <span>Misteri</span>
+                    </div>
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-purple-100 rounded-full flex items-center justify-center text-purple-600">
+                            <i class="fas fa-space-shuttle"></i>
+                        </div>
+                        <span>Fiksi Ilmiah</span>
+                    </div>
+                    <div class="category-card bg-white p-4 rounded-lg shadow-md text-center hover:shadow-lg transition cursor-pointer pulse-hover">
+                        <div class="w-12 h-12 mx-auto mb-2 bg-pink-100 rounded-full flex items-center justify-center text-pink-600">
+                            <i class="fas fa-dragon"></i>
+                        </div>
+                        <span>Fantasi</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Featured Books Section -->
+        <section id="browse" class="py-8">
+            <div class="container mx-auto px-4">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold">Rekomendasi Hari Ini</h3>
+                    <button class="text-blue-600 hover:text-blue-800">Lihat Semua</button>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" id="featuredBooks">
+                    <!-- Books will be loaded here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Book Details Modal -->
+        <div id="bookModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-y-auto hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-4xl my-8 fade-in">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 id="modalBookTitle" class="text-2xl font-bold"></h3>
+                    <button onclick="closeModal('bookModal')" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="flex flex-col md:flex-row gap-6">
+                    <div class="w-full md:w-1/3">
+                        <img id="modalBookCover" src="" alt="" class="w-full h-auto rounded-lg book-cover shadow-md">
+                        <div class="mt-4 flex justify-between">
+                            <button onclick="addToBookmark(currentBook)" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition w-full mr-2">
+                                <i class="fas fa-bookmark"></i> Bookmark
+                            </button>
+                            <button onclick="startReading(currentBook)" class="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition w-full">
+                                <i class="fas fa-book-open"></i> Baca
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <p class="font-semibold">Detail Buku</p>
+                            <p id="modalBookAuthor" class="text-gray-600"></p>
+                            <p id="modalBookCategory" class="text-gray-600"></p>
+                            <p id="modalBookStatus" class="text-gray-600"></p>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-2/3">
+                        <p id="modalBookSynopsis" class="text-gray-700 mb-4"></p>
+                        
+                        <div class="border-t pt-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <h4 class="font-semibold">Daftar Chapter</h4>
+                                <p id="chapterCount" class="text-sm text-gray-500">0 Chapter</p>
+                            </div>
+                            <div id="bookChapters" class="space-y-2 max-h-80 overflow-y-auto p-2">
+                                <!-- Chapters will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reader View -->
+        <div id="readerView" class="fixed inset-0 bg-white z-50 overflow-y-auto hidden dark:bg-gray-900">
+            <div class="container mx-auto px-4 py-8 max-w-3xl">
+                <div class="flex justify-between items-center mb-6">
+                    <button onclick="closeReader()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                        <i class="fas fa-arrow-left mr-2"></i> Kembali
+                    </button>
+                    <div class="flex space-x-4">
+                        <button onclick="toggleBookmarkCurrentChapter()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                            <i id="bookmarkChapterIcon" class="far fa-bookmark"></i>
+                        </button>
+                        <button onclick="toggleDarkModeInReader()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                            <i id="readerThemeIcon" class="fas fa-moon"></i>
+                        </button>
+                        <button onclick="decreaseFontSize()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                            <i class="fas fa-font"></i> -
+                        </button>
+                        <button onclick="increaseFontSize()" class="text-blue-600 hover:text-blue-800 dark:text-blue-400">
+                            <i class="fas fa-font"></i> +
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="progress-bar mb-4"></div>
+                
+                <div class="mb-6">
+                    <h2 id="readerBookTitle" class="text-2xl font-bold mb-2 dark:text-white"></h2>
+                    <p id="readerChapterTitle" class="text-lg text-gray-600 mb-4 dark:text-gray-300"></p>
+                </div>
+                
+                <div id="readerContent" class="prose prose-lg max-w-none dark:text-gray-300 dark:prose-invert" style="line-height: 1.8;"></div>
+                
+                <div class="flex justify-between mt-8 pt-6 border-t">
+                    <button id="prevChapterBtn" onclick="goToPrevChapter()" class="bg-gray-200 hover:bg-gray-300 py-2 px-4 rounded disabled:opacity-50 dark:bg-gray-700 dark:text-white">
+                        <i class="fas fa-arrow-left mr-2"></i> Sebelumnya
+                    </button>
+                    <div class="text-center">
+                        <span id="currentChapterNumber" class="font-medium">1</span> / 
+                        <span id="totalChaptersCount">1</span>
+                    </div>
+                    <button id="nextChapterBtn" onclick="goToNextChapter()" class="bg-gray-200 hover:bg-gray-300 py-2 px-4 rounded disabled:opacity-50 dark:bg-gray-700 dark:text-white">
+                        Berikutnya <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bookmark Section -->
+        <section id="bookmark" class="py-8 bg-gray-50">
+            <div class="container mx-auto px-4">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold">Bookmark Anda</h3>
+                    <button onclick="clearAllBookmarks()" class="text-gray-600 hover:text-gray-800">Bersihkan Semua</button>
+                </div>
+                <div id="bookmarkedItems" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Bookmarked books will be loaded here -->
+                    <div id="emptyBookmark" class="text-center col-span-3 py-8">
+                        <i class="fas fa-bookmark text-4xl text-gray-300 mb-2"></i>
+                        <p class="text-gray-500">Anda belum memiliki bookmark</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="bg-gray-800 text-white py-8">
+            <div class="container mx-auto px-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <div>
+                        <h4 class="text-xl font-bold mb-4">DigiLib</h4>
+                        <p>Perpustakaan digital modern dengan fitur lengkap ala Wattpad</p>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-4">Tautan Cepat</h4>
+                        <ul class="space-y-2">
+                            <li><a href="#home" class="hover:text-blue-300">Beranda</a></li>
+                            <li><a href="#browse" class="hover:text-blue-300">Jelajah Buku</a></li>
+                            <li><a href="#bookmark" class="hover:text-blue-300">Bookmark</a></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-4">Tentang Kami</h4>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="hover:text-blue-300">Tentang</a></li>
+                            <li><a href="#" class="hover:text-blue-300">Kontak</a></li>
+                            <li><a href="#" class="hover:text-blue-300">Karir</a></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-4">Tetap Terhubung</h4>
+                        <div class="flex space-x-4">
+                            <a href="#" class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700">
+                                <i class="fab fa-facebook-f"></i>
+                            </a>
+                            <a href="#" class="w-10 h-10 bg-pink-600 rounded-full flex items-center justify-center hover:bg-pink-700">
+                                <i class="fab fa-instagram"></i>
+                            </a>
+                            <a href="#" class="w-10 h-10 bg-blue-400 rounded-full flex items-center justify-center hover:bg-blue-500">
+                                <i class="fab fa-twitter"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="border-t border-gray-700 mt-8 pt-6 text-center">
+                    <p>&copy; 2023 DigiLib. All rights reserved.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Sample data
+        let books = [
+            {
+                id: 1,
+                title: "Cinta dalam Hujan",
+                author: "Laksmi Pangestu",
+                synopsis: "Sebuah kisah cinta yang terjalin di tengah hujan deras, menguji kesetiaan dan ketulusan hati.",
+                coverUrl: "https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/a0f06482-cd5c-4f8f-830f-9cc4069dc4e6.png",
+                category: "Romantis, Drama",
+                status: "Terbit",
+                chapters: [
+                    { id: 1, title: "Pertemuan di Halte", content: "Hari itu hujan turun dengan deras. Aku berdiri di bawah halte bus, menunggu hujan reda..." },
+                    { id: 2, title: "Payung Merah", content: "Tak disangka, seseorang mendekatiku dengan payung merah. 'Ikutlah berteduh,' katanya..." },
+                ],
+                bookmarks: 0
+            },
+            {
+                id: 2,
+                title: "Petualangan di Dunia Paralel",
+                author: "Galih Suarjaya",
+                synopsis: "Seorang ilmuwan muda menemukan portal ke dunia paralel dan terjebak dalam petualangan yang tak terduga.",
+                coverUrl: "https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/f6edbd8b-c927-4ec6-b9fe-83fe67855fa3.png",
+                category: "Fiksi Ilmiah, Petualangan",
+                status: "Terbit",
+                chapters: [
+                    { id: 1, title: "Penemuan Besar", content: "Percobaan yang awalnya biasa saja tiba-tiba memberikan hasil yang mengejutkan..." },
+                    { id: 2, title: "Titik Biru", content: "Di hadapanku muncul sebuah titik biru berkilauan yang perlahan membesar..." },
+                ],
+                bookmarks: 0
+            },
+            {
+                id: 3,
+                title: "Misteri Vila Tua",
+                author: "Ratna Sarumpaet",
+                synopsis: "Sekelompok remaja menjelajahi vila tua yang konon dihantu, menemukan lebih dari yang mereka cari.",
+                coverUrl: "https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/b4807b93-76e4-45b5-b7e3-114a22769c52.png",
+                category: "Horor, Misteri",
+                status: "Terbit",
+                chapters: [
+                    { id: 1, title: "Undangan Mencurigakan", content: "Surat itu datang tiba-tiba tanpa alamat pengirim yang jelas..." },
+                    { id: 2, title: "Pintu ke Bawah Tanah", content: "Lantai kayu yang berderit itu menyembunyikan rahasia gelap..." },
+                ],
+                bookmarks: 0
+            }
+        ];
+
+        // State variables
+        let currentBook = null;
+        let currentChapterIndex = 0;
+        let currentFontSize = 16;
+        let darkMode = false;
+        let bookmarkedBooks = JSON.parse(localStorage.getItem('bookmarks')) || [];
+        let darkModeState = localStorage.getItem('darkMode') === 'true';
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            renderBooks();
+            checkDarkMode();
+            renderBookmarks();
+            populateBookSelect();
+        });
+
+        // BOOK FUNCTIONS
+        function renderBooks() {
+            const featuredBooksContainer = document.getElementById('featuredBooks');
+            featuredBooksContainer.innerHTML = '';
+            
+            books.forEach(book => {
+                const isBookmarked = bookmarkedBooks.some(b => b.id === book.id);
+                
+                const bookElement = document.createElement('div');
+                bookElement.className = 'bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition cursor-pointer fade-in';
+                bookElement.onclick = () => openBookModal(book);
+                
+                bookElement.innerHTML = `
+                    <div class="relative">
+                        <img src="${book.coverUrl}" alt="Cover buku ${book.title} karya ${book.author}" class="w-full h-48 object-cover">
+                        ${isBookmarked ? '<div class="absolute top-2 right-2 bg-yellow-400 rounded-full p-1"><i class="fas fa-bookmark text-white text-sm"></i></div>' : ''}
+                    </div>
+                    <div class="p-3">
+                        <h4 class="font-bold text-lg truncate">${book.title}</h4>
+                        <p class="text-gray-600 text-sm">${book.author}</p>
+                        <div class="flex justify-between items-center mt-2">
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">${book.category.split(',')[0].trim()}</span>
+                            <span class="text-xs">${book.chapters.length} Ch</span>
+                        </div>
+                    </div>
+                `;
+                
+                featuredBooksContainer.appendChild(bookElement);
+            });
+        }
+
+        function openBookModal(book) {
+            currentBook = book;
+            const modal = document.getElementById('bookModal');
+            document.getElementById('modalBookTitle').textContent = book.title;
+            document.getElementById('modalBookAuthor').textContent = `Penulis: ${book.author}`;
+            document.getElementById('modalBookCategory').textContent = `Kategori: ${book.category}`;
+            document.getElementById('modalBookStatus').textContent = `Status: ${book.status}`;
+            document.getElementById('modalBookSynopsis').textContent = book.synopsis;
+            document.getElementById('modalBookCover').src = book.coverUrl;
+            document.getElementById('modalBookCover').alt = `Cover buku ${book.title} karya ${book.author}`;
+            document.getElementById('chapterCount').textContent = `${book.chapters.length} Chapter`;
+            
+            const chaptersContainer = document.getElementById('bookChapters');
+            chaptersContainer.innerHTML = '';
+            
+            book.chapters.forEach((chapter, index) => {
+                const chapterElement = document.createElement('div');
+                chapterElement.className = 'p-3 border rounded hover:bg-gray-50 cursor-pointer chapter-item';
+                chapterElement.onclick = () => startReading(book, index);
+                chapterElement.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span>${chapter.title}</span>
+                        <i class="fas fa-chevron-right text-gray-400"></i>
+                    </div>
+                `;
+                chaptersContainer.appendChild(chapterElement);
+            });
+            
+            modal.classList.remove('hidden');
+        }
+
+        // CHAPTER FUNCTIONS
+        function startReading(book, chapterIndex = 0) {
+            currentBook = book;
+            currentChapterIndex = chapterIndex || 0;
+            
+            const readerView = document.getElementById('readerView');
+            const readerBookTitle = document.getElementById('readerBookTitle');
+            const readerChapterTitle = document.getElementById('readerChapterTitle');
+            const readerContent = document.getElementById('readerContent');
+            const currentChapterNumber = document.getElementById('currentChapterNumber');
+            const totalChaptersCount = document.getElementById('totalChaptersCount');
+            const prevChapterBtn = document.getElementById('prevChapterBtn');
+            const nextChapterBtn = document.getElementById('nextChapterBtn');
+            const progressBar = document.querySelector('.progress-bar');
+            
+            readerBookTitle.textContent = book.title;
+            readerChapterTitle.textContent = book.chapters[currentChapterIndex].title;
+            readerContent.innerHTML = book.chapters[currentChapterIndex].content;
+            currentChapterNumber.textContent = currentChapterIndex + 1;
+            totalChaptersCount.textContent = book.chapters.length;
+            
+            // Set progress
+            progressBar.style.width = `${((currentChapterIndex + 1) / book.chapters.length) * 100}%`;
+            
+            // Enable/disable navigation buttons
+            prevChapterBtn.disabled = currentChapterIndex === 0;
+            nextChapterBtn.disabled = currentChapterIndex === book.chapters.length - 1;
+            
+            document.getElementById('bookModal').classList.add('hidden');
+            readerView.classList.remove('hidden');
+            
+            // Check if chapter is bookmarked
+            updateBookmarkIcon();
+        }
+
+        function goToPrevChapter() {
+            if (currentChapterIndex > 0) {
+                currentChapterIndex--;
+                startReading(currentBook, currentChapterIndex);
+            }
+        }
+
+        function goToNextChapter() {
+            if (currentChapterIndex < currentBook.chapters.length - 1) {
+                currentChapterIndex++;
+                startReading(currentBook, currentChapterIndex);
+            }
+        }
+
+        // BOOKMARK FUNCTIONS
+        function addToBookmark(book) {
+            const bookmarkIndex = bookmarkedBooks.findIndex(b => b.id === book.id);
+            
+            if (bookmarkIndex === -1) {
+                bookmarkedBooks.push({
+                    id: book.id,
+                    title: book.title,
+                    author: book.author,
+                    coverUrl: book.coverUrl,
+                    lastRead: new Date().toISOString(),
+                    lastReadChapter: 0
+                });
+                
+                book.bookmarks++;
+            } else {
+                bookmarkedBooks.splice(bookmarkIndex, 1);
+                
+                if (book.bookmarks > 0) {
+                    book.bookmarks--;
+                }
+            }
+            
+            localStorage.setItem('bookmarks', JSON.stringify(bookmarkedBooks));
+            renderBookmarks();
+            renderBooks();
+        }
+
+        function toggleBookmarkCurrentChapter() {
+            if (!currentBook) return;
+            
+            const bookmarkIndex = bookmarkedBooks.findIndex(b => b.id === currentBook.id);
+            
+            if (bookmarkIndex === -1) {
+                addToBookmark(currentBook);
+            } else {
+                bookmarkedBooks[bookmarkIndex].lastReadChapter = currentChapterIndex;
+                bookmarkedBooks[bookmarkIndex].lastRead = new Date().toISOString();
+                localStorage.setItem('bookmarks', JSON.stringify(bookmarkedBooks));
+            }
+            
+            updateBookmarkIcon();
+        }
+
+        function updateBookmarkIcon() {
+            if (!currentBook) return;
+            
+            const icon = document.getElementById('bookmarkChapterIcon');
+            const isBookmarked = bookmarkedBooks.some(b => b.id === currentBook.id);
+            
+            if (isBookmarked) {
+                icon.className = 'fas fa-bookmark text-yellow-400';
+            } else {
+                icon.className = 'far fa-bookmark';
+            }
+        }
+
+        function renderBookmarks() {
+            const bookmarksContainer = document.getElementById('bookmarkedItems');
+            const emptyBookmark = document.getElementById('emptyBookmark');
+            
+            bookmarksContainer.innerHTML = '';
+            
+            if (bookmarkedBooks.length === 0) {
+                emptyBookmark.style.display = 'block';
+                bookmarksContainer.appendChild(emptyBookmark);
+                return;
+            }
+            
+            emptyBookmark.style.display = 'none';
+            
+            bookmarkedBooks.forEach(bookmark => {
+                const book = books.find(b => b.id === bookmark.id);
+                if (!book) return;
+                
+                const bookmarkElement = document.createElement('div');
+                bookmarkElement.className = 'bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition max-h-80 fade-in';
+                
+                bookmarkElement.innerHTML = `
+                    <div class="relative">
+                        <img src="${book.coverUrl}" alt="Cover buku ${book.title} oleh ${book.author}" class="w-full h-48 object-cover">
+                        <div class="absolute top-0 left-0 bg-yellow-400 text-white text-xs px-2 py-1 rounded-br">Disimpan</div>
+                    </div>
+                    <div class="p-3">
+                        <h4 class="font-bold text-lg truncate">${book.title}</h4>
+                        <p class="text-gray-600 text-sm">${book.author}</p>
+                        <div class="flex justify-between items-center mt-3">
+                            <button onclick="event.stopPropagation(); startReading(${JSON.stringify(book)}, ${bookmark.lastReadChapter || 0})" class="bg-blue-600 text-white py-1 px-3 rounded text-sm hover:bg-blue-700 transition">
+                                Lanjut Baca
+                            </button>
+                            <button onclick="event.stopPropagation(); addToBookmark(${JSON.stringify(book)})" class="text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                bookmarksContainer.appendChild(bookmarkElement);
+            });
+        }
+
+        function clearAllBookmarks() {
+            if (confirm('Yakin ingin menghapus semua bookmark?')) {
+                bookmarkedBooks = [];
+                localStorage.setItem('bookmarks', JSON.stringify(bookmarkedBooks));
+                renderBookmarks();
+                renderBooks();
+            }
+        }
+
+        // ADMIN FUNCTIONS
+        function showAdminLogin() {
+            document.getElementById('loginModal').classList.remove('hidden');
+        }
+
+        function checkAdminAccess() {
+            const adminKey = document.getElementById('adminKey').value;
+            
+            if (adminKey === 'uswatun19999') {
+                closeModal('loginModal');
+                document.getElementById('adminPanel').classList.remove('hidden');
+                populateBookSelect();
+                renderBookManagementList();
+            } else {
+                alert('Kode admin salah!');
+            }
+        }
+
+        function addNewBook() {
+            const title = document.getElementById('bookTitle').value;
+            const author = document.getElementById('bookAuthor').value;
+            const synopsis = document.getElementById('bookSynopsis').value;
+            const coverUrl = document.getElementById('bookCoverUrl').value || 'https://placehold.co/600x900';
+            const category = document.getElementById('bookCategory').value;
+            const status = document.getElementById('bookStatus').value === '1' ? 'Terbit' : 'Draft';
+            
+            if (!title || !author || !synopsis) {
+                alert('Harap isi semua field yang diperlukan!');
+                return;
+            }
+            
+            const newBook = {
+                id: books.length > 0 ? Math.max(...books.map(b => b.id)) + 1 : 1,
+                title,
+                author,
+                synopsis,
+                coverUrl,
+                category,
+                status,
+                chapters: [],
+                bookmarks: 0
+            };
+            
+            books.push(newBook);
+            
+            // Reset form
+            document.getElementById('bookTitle').value = '';
+            document.getElementById('bookAuthor').value = '';
+            document.getElementById('bookSynopsis').value = '';
+            document.getElementById('bookCoverUrl').value = 'https://placehold.co/600x900';
+            document.getElementById('bookCategory').value = '';
+            document.getElementById('bookStatus').value = '1';
+            
+            alert('Buku berhasil ditambahkan!');
+            renderBooks();
+            populateBookSelect();
+            renderBookManagementList();
+        }
+
+        function addChapter() {
+            const bookId = parseInt(document.getElementById('chapterBookSelect').value);
+            const title = document.getElementById('chapterTitle').value;
+            const content = document.getElementById('chapterContent').value;
+            
+            if (!bookId || !title || !content) {
+                alert('Harap isi semua field yang diperlukan!');
+                return;
+            }
+            
+            const book = books.find(b => b.id === bookId);
+            if (!book) return;
+            
+            const newChapter = {
+                id: book.chapters.length > 0 ? Math.max(...book.chapters.map(c => c.id)) + 1 : 1,
+                title,
+                content
+            };
+            
+            book.chapters.push(newChapter);
+            
+            // Reset form
+            document.getElementById('chapterTitle').value = '';
+            document.getElementById('chapterContent').value = '';
+            
+            alert('Chapter berhasil ditambahkan!');
+            
+            if (currentBook && currentBook.id === bookId) {
+                openBookModal(book);
+            }
+            
+            renderBooks();
+        }
+
+        function populateBookSelect() {
+            const select = document.getElementById('chapterBookSelect');
+            select.innerHTML = '';
+            
+            books.forEach(book => {
+                const option = document.createElement('option');
+                option.value = book.id;
+                option.textContent = `${book.title} - ${book.author}`;
+                select.appendChild(option);
+            });
+        }
+
+        function renderBookManagementList() {
+            const container = document.getElementById('bookManagementList');
+            container.innerHTML = '';
+            
+            books.forEach(book => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="py-2 px-4 border">${book.title}</td>
+                    <td class="py-2 px-4 border">${book.author}</td>
+                    <td class="py-2 px-4 border">
+                        <div class="flex space-x-2">
+                            <button onclick="editBook(${book.id})" class="text-blue-600 hover:text-blue-800">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="deleteBook(${book.id})" class="text-red-600 hover:text-red-800">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function editBook(bookId) {
+            const book = books.find(b => b.id === bookId);
+            if (!book) return;
+            
+            document.getElementById('bookTitle').value = book.title;
+            document.getElementById('bookAuthor').value = book.author;
+            document.getElementById('bookSynopsis').value = book.synopsis;
+            document.getElementById('bookCoverUrl').value = book.coverUrl;
+            document.getElementById('bookCategory').value = book.category;
+            document.getElementById('bookStatus').value = book.status === 'Terbit' ? '1' : '0';
+            
+            // Remove book from list
+            books = books.filter(b => b.id !== bookId);
+            
+            renderBookManagementList();
+            populateBookSelect();
+        }
+
+        function deleteBook(bookId) {
+            if (confirm('Yakin ingin menghapus buku ini?')) {
+                books = books.filter(b => b.id !== bookId);
+                bookmarkedBooks = bookmarkedBooks.filter(b => b.id !== bookId);
+                localStorage.setItem('bookmarks', JSON.stringify(bookmarkedBooks));
+                
+                renderBooks();
+                renderBookManagementList();
+                populateBookSelect();
+                renderBookmarks();
+            }
+        }
+
+        // UI FUNCTIONS
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        function closeReader() {
+            document.getElementById('readerView').classList.add('hidden');
+        }
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        function toggleSearch() {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.classList.toggle('hidden');
+            if (!searchInput.classList.contains('hidden')) {
+                searchInput.focus();
+            }
+        }
+
+        function checkDarkMode() {
+            if (darkModeState) {
+                document.documentElement.classList.add('dark');
+                document.getElementById('themeIcon').className = 'fas fa-sun';
+                document.getElementById('mobileThemeIcon').className = 'fas fa-sun';
+                document.getElementById('readerThemeIcon').className = 'fas fa-sun';
+            } else {
+                document.documentElement.classList.remove('dark');
+                document.getElementById('themeIcon').className = 'fas fa-moon';
+                document.getElementById('mobileThemeIcon').className = 'fas fa-moon';
+                document.getElementById('readerThemeIcon').className = 'fas fa-moon';
+            }
+        }
+
+        function toggleTheme() {
+            darkModeState = !darkModeState;
+            localStorage.setItem('darkMode', darkModeState);
+            checkDarkMode();
+        }
+
+        function toggleDarkModeInReader() {
+            document.getElementById('readerView').classList.toggle('dark-mode');
+            
+            const icon = document.getElementById('readerThemeIcon');
+            if (document.getElementById('readerView').classList.contains('dark-mode')) {
+                icon.className = 'fas fa-sun';
+            } else {
+                icon.className = 'fas fa-moon';
+            }
+        }
+
+        function increaseFontSize() {
+            currentFontSize = Math.min(currentFontSize + 1, 24);
+            document.getElementById('readerContent').style.fontSize = `${currentFontSize}px`;
+        }
+
+        function decreaseFontSize() {
+            currentFontSize = Math.max(currentFontSize - 1, 12);
+            document.getElementById('readerContent').style.fontSize = `${currentFontSize}px`;
+        }
+    </script>
+</body>
+</html>
